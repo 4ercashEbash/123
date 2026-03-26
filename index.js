@@ -61,13 +61,17 @@ function normalizeBool(v) {
   return v === true;
 }
 
-// === Discord бот ===
+// === Discord бот с отладкой ===
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers
   ]
 });
+
+// Добавляем слушатели для отладки
+client.on('debug', (info) => console.log(`[DEBUG] ${info}`));
+client.on('error', (error) => console.error(`[CLIENT ERROR] ${error}`));
 
 async function getBoosterRoleId(guild) {
   await guild.roles.fetch();
@@ -242,6 +246,7 @@ app.listen(PORT, () => {
   console.log(`🌍 PUBLIC_BASE_URL=${PUBLIC_BASE_URL}`);
 });
 
+console.log('Attempting to login to Discord...');
 client.login(DISCORD_TOKEN).catch(error => {
   console.error('❌ Discord login failed:', error);
   process.exit(1);
