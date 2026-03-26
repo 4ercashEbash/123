@@ -10,7 +10,7 @@ import {
   SlashCommandBuilder
 } from 'discord.js';
 
-// --- Load environment variables ---
+// === Загрузка переменных окружения ===
 const {
   DISCORD_TOKEN,
   CLIENT_ID,
@@ -20,16 +20,20 @@ const {
   PUBLIC_BASE_URL
 } = process.env;
 
-if (!DISCORD_TOKEN || !CLIENT_ID || !GUILD_ID || !ROBLOX_API_KEY || !PUBLIC_BASE_URL) {
-  console.error('Missing environment variables in .env');
+// === Проверка обязательных переменных ===
+const requiredEnv = ['DISCORD_TOKEN', 'CLIENT_ID', 'GUILD_ID', 'ROBLOX_API_KEY', 'PUBLIC_BASE_URL'];
+const missing = requiredEnv.filter(key => !process.env[key]);
+if (missing.length) {
+  console.error(`❌ Missing environment variables: ${missing.join(', ')}`);
   process.exit(1);
 }
+console.log('✅ Environment variables loaded');
 
-// --- Express setup ---
+// === Express ===
 const app = express();
 app.use(express.json());
 
-// --- Data file handling ---
+// === Работа с файлом данных ===
 const DATA_FILE = path.resolve('./data.json');
 
 function loadData() {
@@ -57,34 +61,7 @@ function normalizeBool(v) {
   return v === true;
 }
 
-// --- Register slash commands ---
-async function registerCommands() {
-  const commands = [
-    new SlashCommandBuilder()
-      .setName('verify')
-      .setDescription('Link your Roblox account using the code from the game')
-      .addStringOption(option =>
-        option
-          .setName('code')
-          .setDescription('The verification code from Roblox')
-          .setRequired(true)
-      ),
-    new SlashCommandBuilder()
-      .setName('boosterstatus')
-      .setDescription('Check if your account is linked and booster tool status')
-  ].map(cmd => cmd.toJSON());
-
-  const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
-
-  await rest.put(
-    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-    { body: commands }
-  );
-
-  console.log('Slash commands registered');
-}
-
-// --- Discord bot ---
+// === Discord бот ===
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -107,28 +84,53 @@ async function memberHasBooster(member) {
 async function recomputeEntitlementForDiscordId(discordId) {
   const guild = await client.guilds.fetch(GUILD_ID);
   let member = null;
-
   try {
     member = await guild.members.fetch(discordId);
   } catch {
     member = null;
   }
-
   const data = getData();
   const robloxUserId = data.links[discordId];
   if (!robloxUserId) return;
-
   const hasBooster = member ? await memberHasBooster(member) : false;
-
   setData(db => {
     db.entitlements[String(robloxUserId)] = hasBooster;
   });
-
-  console.log(`Entitlement updated: discord=${discordId} roblox=${robloxUserId} booster=${hasBooster}`);
+  console.log(`📌 Entitlement updated: discord=${discordId} roblox=${robloxUserId} booster=${hasBooster}`);
 }
 
+// === Регистрация слэш-команд ===
+async function registerCommands() {
+  const commands = [
+    new SlashCommandBuilder()
+      .setName('verify')
+      .setDescription('Link your Roblox account using the code from the game')
+      .addStringOption(option =>
+        option
+          .setName('code')
+          .setDescription('The verification code from Roblox')
+          .setRequired(true)
+      ),
+    new SlashCommandBuilder()
+      .setName('boosterstatus')
+      .setDescription('Check if your account is linked and booster tool status')
+  ].map(cmd => cmd.toJSON());
+
+  const rest = new REST({ version: '10' }).setToken(DISCORD_TOKEN);
+  try {
+    await rest.put(
+      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+      { body: commands }
+    );
+    console.log('✅ Slash commands registered');
+  } catch (error) {
+    console.error('❌ Failed to register slash commands:', error);
+  }
+}
+
+// === События бота ===
 client.once('ready', async () => {
-  console.log(`Logged in as ${client.user.tag}`);
+  console.log(`✅ Logged in as ${client.user.tag}`);
   await registerCommands();
 });
 
@@ -137,7 +139,6 @@ client.on('interactionCreate', async interaction => {
 
   if (interaction.commandName === 'verify') {
     const code = interaction.options.getString('code', true).trim().toUpperCase();
-
     const data = getData();
     const robloxUserId = data.pendingCodes[code];
 
@@ -163,12 +164,12 @@ client.on('interactionCreate', async interaction => {
       content: `Done. Roblox account linked.\nBooster Tool status: ${hasBooster ? 'ACTIVE' : 'INACTIVE'}`,
       ephemeral: true
     });
+    console.log(`🔗 Linked discord=${interaction.user.id} roblox=${robloxUserId}`);
   }
 
   if (interaction.commandName === 'boosterstatus') {
     const data = getData();
     const robloxUserId = data.links[interaction.user.id];
-
     if (!robloxUserId) {
       await interaction.reply({
         content: 'Roblox account not linked yet. Join the game and get a code.',
@@ -176,7 +177,6 @@ client.on('interactionCreate', async interaction => {
       });
       return;
     }
-
     const active = normalizeBool(data.entitlements[String(robloxUserId)]);
     await interaction.reply({
       content: `Linked Roblox UserId: ${robloxUserId}\nBooster Tool: ${active ? 'ACTIVE' : 'INACTIVE'}`,
@@ -195,7 +195,7 @@ client.on('guildMemberRemove', async member => {
   await recomputeEntitlementForDiscordId(member.id);
 });
 
-// --- Roblox API endpoints ---
+// === API для Roblox ===
 app.get('/roblox/create-link-code', (req, res) => {
   const userId = String(req.query.userId || '');
   const key = String(req.query.key || '');
@@ -203,7 +203,6 @@ app.get('/roblox/create-link-code', (req, res) => {
   if (key !== ROBLOX_API_KEY) {
     return res.status(403).json({ error: 'forbidden' });
   }
-
   if (!/^\d+$/.test(userId)) {
     return res.status(400).json({ error: 'invalid userId' });
   }
@@ -217,7 +216,6 @@ app.get('/roblox/create-link-code', (req, res) => {
   setData(db => {
     db.pendingCodes[code] = userId;
   });
-
   res.json({ code });
 });
 
@@ -231,20 +229,20 @@ app.get('/roblox/entitlement', (req, res) => {
 
   const data = getData();
   const active = normalizeBool(data.entitlements[userId]);
-
-  res.json({
-    userId,
-    hasBoosterTool: active
-  });
+  res.json({ userId, hasBoosterTool: active });
 });
 
 app.get('/', (_req, res) => {
   res.send('OK');
 });
 
+// === Запуск сервера и логин бота ===
 app.listen(PORT, () => {
-  console.log(`API listening on port ${PORT}`);
-  console.log(`PUBLIC_BASE_URL=${PUBLIC_BASE_URL}`);
+  console.log(`🚀 API listening on port ${PORT}`);
+  console.log(`🌍 PUBLIC_BASE_URL=${PUBLIC_BASE_URL}`);
 });
 
-client.login(DISCORD_TOKEN);
+client.login(DISCORD_TOKEN).catch(error => {
+  console.error('❌ Discord login failed:', error);
+  process.exit(1);
+});
