@@ -1,0 +1,14 @@
+{
+  "name": "discord-roblox-booster",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.19.3",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2"
+  }
+}
